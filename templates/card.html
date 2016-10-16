@@ -1,0 +1,258 @@
+<!doctype html>
+<html>
+<head>
+<style>
+
+div.container {
+    width: 100%;
+    border: 1px solid gray;
+}
+
+div.wordhalf {
+    float: left;
+    width: 50%;
+    margin: 0;
+}
+
+div.kanjihalf {
+    float: right;
+    width: 45%;
+}
+
+#nav {
+    padding: 3px 0;
+    text-align: center;
+    background-color: white;
+    margin-top: 3px;
+    visibility: visible;
+}
+#meaning {
+    padding: 10px 0;
+    text-align: center;
+    background-color: lightblue;
+    margin-top: 5px;
+    visibility: visible;
+}
+#hint {
+    padding: 5px 0;
+    text-align: center;
+    background-color: lightblue;
+    margin-top: 5px;
+    {% if show_all %}
+    visibility: visible;
+    {% else %}
+    visibility: hidden;
+    {% endif %}
+}
+#word {
+    padding: 0px 0;
+    text-align: center;
+    background-color: lightblue;
+    margin-top: 5px;
+    font-size: 50px;
+    {% if show_all %}
+    visibility: visible;
+    {% else %}
+    visibility: hidden;
+    {% endif %}
+}
+#example {
+    padding: 5px 0;
+    text-align: center;
+    background-color: lightblue;
+    margin-top: 5px;
+    {% if show_all %}
+    visibility: visible;
+    {% else %}
+    visibility: hidden;
+    {% endif %}
+}
+
+#kanjikanji {
+    padding: 1px 0;
+    text-align: center;
+    background-color: pink;
+    margin-top: 5px;
+    font-size: 50px;
+    visibility: visible;
+}
+#kanjikana {
+    padding: 10px 0;
+    text-align: center;
+    background-color: pink;
+    margin-top: 5px;
+    visibility: visible;
+}
+#kanjirelated {
+    padding: 10px 0;
+    text-align: center;
+    background-color: pink;
+    margin-top: 5px;
+    font-size: 20px;
+    visibility: visible;
+}
+#kanjimeaning {
+    padding: 10px 0;
+    text-align: center;
+    background-color: pink;
+    margin-top: 5px;
+    font-size: 20px;
+    visibility: visible;
+}
+#kanjimnemo {
+    padding: 10px 0;
+    text-align: center;
+    background-color: pink;
+    margin-top: 5px;
+    visibility: visible;
+}
+
+
+</style>
+</head>
+<body>
+<div class="container">
+<div class="wordhalf">
+<div id="nav">
+{% if has_next %}
+  <a href="/new_card"> New </a>
+{% else %}
+  <a href="/new_card"> New (>) </a>
+{% endif %}
+
+{% if has_prev %}
+  <a href="/prev_card"> Prev (<) </a>
+{% else %}
+  Prev
+{% endif %}
+
+{% if has_next %}
+  <a href="/next_card"> Next (>) </a>
+{% else %}
+  Next
+{% endif %}
+
+{{ index_label }}
+
+  (press Space to reveal/hide)
+</div>
+
+<div id="meaning">
+  {{ meaning }}
+</div>
+<div id="hint">
+  <p>{{ kana }}</p>
+  <p>{{ romaji }}</p>
+  <p>{{ ref }}</p>
+  <p>
+  {% for item in related %}
+  {% if item.has_link %}
+    <a href={{ item.link }}> {{ item.value}} </a>
+  {% else %}
+    {{ item.value}}
+  {% endif %}
+  {% endfor %}
+  </p>
+</div>
+<div id="word">
+  {% for item in word %}
+  {% if item.has_link %}
+    <a href={{ item.link }}> {{ item.value}} </a>
+  {% else %}
+    {{ item.value}}
+  {% endif %}
+  {% endfor %}
+</div>
+<div id="example">
+  <p>{{ example }}</p>
+</div>
+</div>
+
+{% if kanji %}
+<div class="kanjihalf">
+
+<div id="kanjikanji">
+  {{ kanji }}
+</div>
+<div id="kanjikana">
+  {% if kanjion %}
+  <p>{{ kanjion }}</p>
+  {% endif %}
+  {% if kanjikun %}
+  <p>{{ kanjikun }}</p>
+  {% endif %}
+</div>
+<div id="kanjirelated">
+  <p>
+  {% for item in kanjirelated %}
+  {% if item.has_link %}
+    <a href={{ item.link }}> {{ item.value}} </a>
+  {% else %}
+    {{ item.value}}
+  {% endif %}
+  {% endfor %}
+  </p>
+</div>
+<div id="kanjimeaning">
+  <p>{{ kanjimeaning }}</p>
+</div>
+<div id="kanjimnemo">
+  <p>{{ kanjimnemo }}</p>
+</div>
+</div>
+{% endif %}
+
+
+</div>
+<script>
+function myFunction() {
+    var x = document.getElementById('hint');
+    var y = document.getElementById('word');
+    var z = document.getElementById('example');
+    xvis = "";
+    yvis = "";
+    if(document.defaultView && document.defaultView.getComputedStyle)
+    {
+    xvis = document.defaultView.getComputedStyle(x, null).getPropertyValue("visibility");
+    yvis = document.defaultView.getComputedStyle(y, null).getPropertyValue("visibility");
+    }
+    else if(x.currentStyle)    // For IE
+    {
+    xvis = x.currentStyle["visibility"];
+    yvis = y.currentStyle["visibility"];
+    }
+    if (xvis === 'hidden') {
+      x.style.visibility = 'visible';
+    } else {
+      if (yvis === 'hidden') {
+        y.style.visibility = 'visible';
+        z.style.visibility = 'visible';
+      } else {
+        y.style.visibility = 'hidden';
+        z.style.visibility = 'hidden';
+      }
+    }
+}
+
+document.onkeyup = function(event){
+    if (event.keyCode === 32) {  // space
+      myFunction();
+    }
+    if (event.keyCode === 39) {  // right arrow
+      {% if has_next %}
+      window.location.href = "/next_card";
+      {% else %}
+      window.location.href = "/new_card";
+      {% endif %}
+    }
+    {% if has_prev %}
+    if (event.keyCode === 37) {  // left arrow
+      window.location.href = "/prev_card";
+    }
+    {% endif %}
+}
+</script>
+
+</body>
+</html>
+

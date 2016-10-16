@@ -1,157 +1,18 @@
 # -*- coding: utf-8 -*-
-import Tkinter as Tk
-import tkFont
-import sys
 import numpy as np
-import webbrowser
-import urllib
-import xlrd
-import xml.etree.cElementTree as etree
-import re
 import subprocess
-import StringIO
+import os
+from sotana import read_words_and_kanji, ChartParser, jReads, tokenizedRomaji, ref_string, sep_string
+from flask import Flask, session, redirect, url_for, render_template
 
 
-def cabocha_xml(sent):
-    """
-    @return type = unicode
-    -xml format unicode string is returned 
-    """
-    command = 'cabocha -f 3'
-    p = subprocess.Popen(command, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-    output, _ = p.communicate(sent)
-    return unicode(output, 'utf8')
-
-
-class ChartParser(object):
-    def __init__(self, chartFile):
-        with open('katakanaChart.txt') as f:
-            self.chart = f.readlines()
-
-    def chartParse(self):
-        """
-        @return chartDict
-        ガ ==> g,a
-        キ ==> k,i
-        キャ ==> k,ya
-        Similarily for Hiragana
-        @setrofim : http://www.python-forum.org/pythonforum/viewtopic.php?f=3&t=31935
-        """
-        lines = self.chart
-        chartDict = {}
-        output = {}
-        col_headings = lines.pop(0).split()
-        for line in lines:
-            cells = line.split()
-            for i, c in enumerate(cells[1:]):
-                output[c] = (cells[0], col_headings[i])
-        for k in sorted(output.keys()):
-            #@k = katakana
-            #@r = first romaji in row
-            #@c = concatinating romaji in column
-            r, c = output[k]
-            k, r, c = [unicode(item,'utf-8') for item in [k,r,c]]
-            if k == 'X':continue
-            if r=='s' and c[0] == 'y':
-                c = 'h' + c[1:]
-            if r=='s' and c == 'i':
-                c = 'hi'
-            if r=='j' and c[0] == 'y':
-                c = c[1:]
-            if r=='t' and c[0] == 'y':
-                r = 'c'
-                c = 'h' + c[1:]
-            romaji = ''.join([item.replace('X', '') for item in [r,c]])
-            chartDict[k] = romaji
-        return chartDict
-
-
-def tokenizedRomaji(jSent):
-    kataDict = ChartParser('data/katakanaChart.txt').chartParse()
-    tokenizeRomaji = []
-    def check_duplicate(s, duplicate):
-        if not duplicate:
-            return s
-        else:
-            return s[0] + s
-
-    duplicate = False
-    for kataChunk in jReads(jSent):
-        romaji = ''
-        for idx, kata in enumerate(kataChunk,1):
-            if idx != len(kataChunk):
-                doubles = kata+kataChunk[idx]
-                if kataDict.has_key(doubles):
-                    romaji += check_duplicate(kataDict[doubles], duplicate)
-                    duplicate = False
-                    continue
-            if kataDict.has_key(kata):
-                next_romaji = kataDict[kata]
-                if next_romaji == 'hu':
-                    next_romaji = 'fu'
-                romaji += check_duplicate(kataDict[kata], duplicate)
-                duplicate = False
-            elif ord(kata) == 12483:  # 12483 = unicode for ッ 
-                duplicate = True
-            else:
-                duplicate = False
-                pass
-                #checkPunctuation(kata)
-        tokenizeRomaji.append(romaji)
-    return tokenizeRomaji
-
-
-def jReads(target_sent):
-    sentence = etree.fromstring(cabocha_xml(target_sent.encode('utf-8')).encode('utf-8'))
-    return [tok.get("feature").split(',')[-1] for chunk in sentence for tok in chunk.findall('tok')]
-
-
-def sep_string(s):
-    return [x for x in s.replace(unicode(u'\u3001'), ',').replace(unicode(u'\uff0c'),',').split(',') if x]    
-
-
-def read_words_and_kanji(filename):
-    dicts = {}
-    for sheet in ['EK1', 'EK2', 'EK2Old', 'JBP3', 'mimi']:
-        workbook = xlrd.open_workbook(filename)
-        worksheet = workbook.sheet_by_name(sheet)
-        num_cells = worksheet.ncols
-        fields = ['word', 'meaning', 'kanji', 'page', 'lesson', 'related words', 'example']
-        #assert num_cells >= len(fields)
-        dict_words = [dict(zip(fields, v[:len(fields)])) for v in worksheet._cell_values]
-        dicts[sheet] = dict_words
-
-    worksheet = workbook.sheet_by_name('Kanji')
-    num_cells = worksheet.ncols
-    fields = ['kanji', 'kun', 'on', 'related kanji', 'meaning', 'explanation']
-    assert num_cells >= len(fields)
-    dict_kanji = [dict(zip(fields, v[:len(fields)])) for v in worksheet._cell_values]
-
-    return dicts, dict_kanji
-
-
-def to_str(x):
-    if isinstance(x, (float, int)):
-        return ('%i' % x)
-    else:
-        return x
-
-
-def ref_string(data):       
-    k = to_str(data['kanji'])
-    p = to_str(data['page'])
-    l = to_str(data['lesson'])
-    return "k %s, p %s, l %s" % (k, p, l)
-
-
-def browse_kanji(c):
-    url = "http://www.romajidesu.com/kanji/"
-    controller = webbrowser.get('firefox')
-    controller.open(url + urllib.quote(c.encode('utf-8')))
+app = Flask(__name__)
+app.secret_key = 'sotana'
+histories = {}
+os.environ['PATH'] += ':/usr/local/bin'
 
 
 class Card(object):
-    kataDict = ChartParser('data/katakanaChart.txt').chartParse()
     def __init__(self, n_frames, app, frame, **params):
         self.app = app
         self.card_frame = frame
@@ -275,7 +136,7 @@ class KanjiCard(Card):
             self.turn(i)
 
 
-class App(Tk.Frame):
+class App():
     def __init__(self, dict_data, kanji_data, default_dict_name, master=None, **params):
         Tk.Frame.__init__(self, master, **params)
         self.grid(sticky=Tk.N + Tk.S + Tk.E + Tk.W)  # make it resizable
@@ -348,24 +209,6 @@ class App(Tk.Frame):
         self.probs[i] *= 0.2
         self.probs /= np.sum(self.probs)
         return i
-
-    def show_next(self, i=None, remember=True):
-        # i can be:
-        #     None, meaning take a random card from default deck
-        #     an integer: index in default deck
-        #     a tuple (index, dict_name)
-        while i is None:
-            i = self.random_sample()
-            if self.dict_data[self.default_dict_name][i]['lesson'] > 150000:
-                i = None
-        if remember:
-            self.add_to_history(i)
-        for w in self.card_frame.winfo_children():
-            if isinstance(w, Tk.Frame):
-                w.destroy()
-        idx, key = (i, self.default_dict_name) if isinstance(i, (float, int)) else i
-        self.last_word_card = WordCard(self.dict_data[key][idx], self, self.card_frame, bg='black')
-        self.last_word_card.turn(0)
 
     def show_kanji(self, c):
         if c not in self.kanji:
@@ -460,13 +303,184 @@ class App(Tk.Frame):
         self.show_word_list(word_index_list)
         
 
+class History(object):
+    def __init__(self):
+        self.history = []
+        self.hist_index = 0
+        self.current_kanji = None
+        self.kataDict = ChartParser('data/katakanaChart.txt').chartParse()
+        self.dicts, self.kanji_data = read_words_and_kanji('japdic.xlsx')
+        self.default_dict_name='mimi'
+        self.probs = np.ones(len(self.dicts[self.default_dict_name])) / len(self.dicts[self.default_dict_name])
+        self.words = {k: [d['word'] for d in self.dicts[k]] for k in self.dicts.keys()}
+        self.kanji = [d['kanji'] for d in self.kanji_data]
 
-if __name__=='__main__':
-#    url = "http://docs.python.org/library/webbrowser.html"
-#    webbrowser.open(url,new=2)
-    import os
-    os.environ['PATH'] += ':/usr/local/bin'
-    dicts, kanji = read_words_and_kanji('japdic.xlsx')
-    a = App(dicts, kanji, default_dict_name='mimi', bg="black")
-    a.master.title('Kanji')
-    a.mainloop()
+    def random_sample(self):
+        i = np.digitize(np.random.random(1), np.cumsum(self.probs))[0]
+        self.probs[i] *= 0.2
+        self.probs /= np.sum(self.probs)
+        return i
+
+    def add_to_history(self, i):
+        self.history = self.history[:self.hist_index] + [i]
+        self.hist_index += 1
+
+    def hist_button_status(self):
+        status = {
+            'has_prev': self.hist_index > 1,
+            'has_next': self.hist_index < len(self.history),
+            'index_label': str("%i/%i" % (self.hist_index, len(self.history)))
+        }
+        return status
+
+    def history_back(self):
+        self.hist_index -= 1
+        self.show_next(i=self.history[self.hist_index-1], remember=False)
+
+    def history_forward(self):
+        self.show_next(i=self.history[self.hist_index], remember=False)
+        self.hist_index += 1
+        self._update_hist_button_status()
+
+
+def _get_session_history():
+    if 'code' not in session:
+        return False, redirect(url_for('no_session'))
+    code = session['code']
+    if code not in histories:
+        return False, redirect(url_for('no_session'))
+    return True, histories[code]
+
+
+@app.route('/')
+def default():
+    return '''
+    <a href='/start_session'> Start! </a>
+    '''
+
+@app.route('/start_session')
+def start_session():
+    code = np.random.random()
+    session['code'] = code
+    histories[code] = History()
+    return redirect(url_for('new_card'))
+
+
+def _make_kanji_rule(h, c):
+    return  url_for('new_card', index=h.history[h.hist_index - 1][0],
+                    dict_name=h.history[h.hist_index - 1][1],
+                    remember=False, kanji=c, show_all=True)
+
+
+def _make_kanji_list(h, kanjis):
+    kanji_list = []
+    for c in kanjis:
+        is_linkable = (0x4e00 <= ord(c) <= 0x9faf) and (c in h.kanji)  # it is a kanji and we have it in the database
+        kanji_list.append(dict(value=c, has_link=is_linkable, link=(_make_kanji_rule(h, h.kanji.index(c)) if is_linkable else None)))
+    return kanji_list
+
+
+@app.route('/new_card')
+@app.route('/new_card/<int:index>')
+@app.route('/new_card/<int:index>/<dict_name>')
+@app.route('/new_card/<int:index>/<dict_name>/<int:remember>')
+@app.route('/new_card/<int:index>/<dict_name>/<int:remember>/<int:kanji>')
+@app.route('/new_card/<int:index>/<dict_name>/<int:remember>/<int:kanji>/<int:show_all>')
+def new_card(index=None, dict_name=None, remember=True, kanji=None, show_all=False):
+    success, h = _get_session_history()
+    if not success:
+        return h
+
+    if dict_name is None:
+        dict_name = h.default_dict_name
+
+    if kanji is not None:
+        h.current_kanji = kanji
+
+    while index is None:
+        index = h.random_sample()
+        if h.dicts[h.default_dict_name][index]['lesson'] > 150000:
+            index = None
+
+    if remember:
+        h.add_to_history((index, dict_name))
+
+    data = h.dicts[dict_name][index]
+
+    kana = ''.join([x.split(',')[-1] for x in jReads(data['word'])])
+    romaji = ' '.join(tokenizedRomaji(unicode(data['word']))).encode('utf-8')
+    ref = ref_string(data)
+    related = []
+    if data['related words']:
+        words = sep_string(data['related words'])
+        for i, w in enumerate(words):
+            w = w.strip()
+            for k in h.words.keys():
+                if w in h.words[k]:
+                    related.append(dict(value=w, has_link=True,
+                                        link=url_for('new_card', index=h.words[k].index(w),
+                                                     dict_name=k, remember=True)))
+                    break
+            else:
+                related.append(dict(value=w, has_link=False, link=None))
+
+
+    word = _make_kanji_list(h, data['word'])
+
+    example = ''
+    if 'example' in data and data['example']:
+        example = data['example']
+
+    main_dict = dict(meaning=data['meaning'],
+                     kana=kana, romaji=romaji,
+                     ref=ref_string(data),
+                     related=related,
+                     word=word,
+                     example=example,
+                     show_all=show_all)
+
+    if h.current_kanji is None:
+        kanjidict = {}
+    else:
+        kanji_data = h.kanji_data[h.current_kanji]
+        related_kanji = _make_kanji_list(h, sep_string(kanji_data['related kanji']))
+
+        kanjidict = dict(kanji=kanji_data['kanji'],
+                         kanjikun=kanji_data['kun'],
+                         kanjion=kanji_data['on'],
+                         kanjirelated=related_kanji,
+                         kanjimeaning=kanji_data['meaning'],
+                         kanjimnemo=kanji_data['explanation']
+                         )
+
+    main_dict.update(kanjidict)
+    main_dict.update(h.hist_button_status())
+
+    return render_template('card.html', **main_dict)
+
+
+@app.route('/prev_card')
+def prev_card():
+    success, h = _get_session_history()
+    if not success:
+        return h
+    h.hist_index -= 1
+    return redirect(url_for('new_card', index=h.history[h.hist_index - 1][0],
+                            dict_name=h.history[h.hist_index - 1][1], remember=False,
+                            kanji=h.current_kanji))
+
+
+@app.route('/next_card')
+def next_card():
+    success, h = _get_session_history()
+    if not success:
+        return h
+    h.hist_index += 1
+    return redirect(url_for('new_card', index=h.history[h.hist_index - 1][0],
+                            dict_name=h.history[h.hist_index - 1][1], remember=False,
+                            kanji=h.current_kanji))
+
+
+@app.route('/no_session')
+def no_session():
+    return ("No session!")
