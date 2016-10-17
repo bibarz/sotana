@@ -134,13 +134,13 @@ div.kanjihalf {
 
 {{ index_label }}
 
-  (press Space to reveal/hide)
+  (Space or click to reveal/hide)
 </div>
 
-<div id="meaning">
+<div id="meaning" onclick="myFunction()">
   {{ meaning }}
 </div>
-<div id="hint">
+<div id="hint" onclick="myFunction()">
   <p>{{ kana }}</p>
   <p>{{ romaji }}</p>
   <p>{{ ref }}</p>
@@ -154,7 +154,7 @@ div.kanjihalf {
   {% endfor %}
   </p>
 </div>
-<div id="word">
+<div id="word" onclick="myFunction()">
   {% for item in word %}
   {% if item.has_link %}
     <a href={{ item.link }}> {{ item.value}} </a>
